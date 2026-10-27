@@ -1,0 +1,1372 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style></head><body><title>Мастерская Doom-мода</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Russo+One&family=Golos+Text:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+/* Layout: a workshop bench. Sticky header with three tabs; each tab is a tool surface
+   (gallery + pixel editor, top-down map canvas + side panels, sync sheet).
+   Deliberately single dark theme: pixel art and map colors are judged against a dim, neutral-warm ground. */
+:root {
+  color-scheme: dark;
+  --bg: #16130f;
+  --panel: #211c16;
+  --panel-2: #2b241c;
+  --line: #3d342a;
+  --fg: #ece2d2;
+  --muted: #a8998a;
+  --accent: #e0702f;
+  --accent-ink: #1a0f07;
+  --ok: #79b864;
+  --warn: #e3b341;
+  --danger: #db5040;
+  --void: #0d0b09;
+  --font-display: "Russo One", "Arial Black", system-ui, sans-serif;
+  --font-body: "Golos Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  background: var(--bg); color: var(--fg);
+  font: 14px/1.45 var(--font-body);
+  display: flex; flex-direction: column;
+}
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--panel); }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.gutter { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+
+header.top {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
+  background: var(--panel); border-bottom: 1px solid var(--line);
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; padding-block: 10px;
+}
+.brand { font-family: var(--font-display); font-size: 18px; letter-spacing: .02em; display: flex; align-items: baseline; gap: 10px; }
+.brand small { font-family: var(--font-mono); font-size: 11px; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; }
+nav.tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+nav.tabs button {
+  background: transparent; border: 1px solid transparent; border-radius: 6px;
+  padding: 6px 12px; color: var(--muted); font-weight: 500;
+}
+nav.tabs button[aria-selected="true"] { color: var(--fg); background: var(--panel-2); border-color: var(--line); }
+.conn { margin-left: auto; font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.dot.ok { background: var(--ok); } .dot.bad { background: var(--danger); } .dot.busy { background: var(--warn); }
+
+main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+section.view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+.btn {
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: 6px 11px; line-height: 1.2; white-space: nowrap;
+}
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.btn.danger { color: var(--danger); }
+.btn.danger.armed { background: var(--danger); color: var(--accent-ink); border-color: var(--danger); }
+.btn[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.btn:disabled { opacity: .45; cursor: default; }
+input[type=text], input[type=search], input[type=number], select, textarea {
+  background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; min-width: 0;
+}
+label.field { display: grid; gap: 3px; font-size: 12px; color: var(--muted); }
+label.field > :is(input, select, textarea) { color: var(--fg); font-size: 14px; }
+.label { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.mono { font-family: var(--font-mono); }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.banner { background: #3a2a14; color: var(--warn); border-bottom: 1px solid var(--line); padding-block: 8px; font-size: 13px; }
+
+/* ---------- Textures ---------- */
+.tex-toolbar { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding-block: 12px; border-bottom: 1px solid var(--line); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.seg button { background: transparent; border: 0; padding: 6px 11px; color: var(--muted); border-right: 1px solid var(--line); }
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--panel-2); color: var(--fg); }
+.seg .n { font-family: var(--font-mono); font-size: 11px; color: var(--muted); margin-left: 4px; }
+.tex-toolbar input[type=search] { flex: 1 1 180px; max-width: 320px; }
+.gallery-wrap { flex: 1; overflow: auto; padding-block: 14px 40px; }
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 10px; }
+.card {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px;
+  display: grid; gap: 5px; text-align: left; position: relative;
+}
+.card:hover { border-color: var(--muted); }
+.card .thumb {
+  aspect-ratio: 1; max-width: 100%; display: grid; place-items: center; overflow: hidden; border-radius: 4px;
+  background: repeating-conic-gradient(#2a241d 0 25%, #221d17 0 50%) 0 0 / 12px 12px;
+}
+.card img { max-width: 100%; max-height: 100%; image-rendering: pixelated; }
+.card .nm { font-family: var(--font-mono); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card .dim { font-family: var(--font-mono); font-size: 10px; color: var(--muted); }
+.card .chg { position: absolute; top: 4px; right: 4px; background: var(--accent); color: var(--accent-ink); font-size: 10px; font-weight: 600; padding: 1px 5px; border-radius: 4px; }
+.more { display: flex; justify-content: center; padding-top: 16px; }
+.empty { color: var(--muted); padding: 40px 0; text-align: center; }
+
+/* Pixel editor overlay */
+.editor {
+  position: fixed; inset: 0; z-index: 20; background: var(--bg);
+  display: grid; grid-template-rows: auto 1fr; padding-top: env(safe-area-inset-top, 0px);
+}
+.editor-head { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding-block: 10px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.editor-head h2 { margin: 0; font: 16px var(--font-mono); font-weight: 600; }
+.editor-head .meta { color: var(--muted); font-size: 12px; font-family: var(--font-mono); }
+.editor-head .spacer { flex: 1; }
+.editor-body { display: grid; grid-template-columns: 200px minmax(0, 1fr) 260px; min-height: 0; }
+.editor-body > * { min-height: 0; overflow: auto; }
+.tools { border-right: 1px solid var(--line); padding: 12px; display: grid; gap: 14px; align-content: start; }
+.toolgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.toolgrid .btn { display: flex; justify-content: space-between; gap: 4px; }
+.toolgrid kbd { font-family: var(--font-mono); font-size: 10px; opacity: .6; }
+.stage { display: grid; place-items: center; padding: 16px; background: var(--void); position: relative; }
+.stage canvas { image-rendering: pixelated; touch-action: none; user-select: none; -webkit-user-select: none; cursor: crosshair; box-shadow: 0 0 0 1px var(--line); }
+.stage .hint { position: absolute; left: 12px; bottom: 10px; font: 11px var(--font-mono); color: var(--muted); }
+.colors { border-left: 1px solid var(--line); padding: 12px; display: grid; gap: 12px; align-content: start; }
+.cur { display: flex; gap: 10px; align-items: center; }
+.swatch-big { width: 44px; height: 44px; border-radius: 6px; border: 1px solid var(--line); }
+.pal { display: grid; grid-template-columns: repeat(16, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); }
+.pal button { aspect-ratio: 1; border: 0; padding: 0; min-width: 0; }
+.pal button:hover { outline: 1px solid var(--fg); z-index: 1; }
+.recent { display: flex; gap: 4px; flex-wrap: wrap; min-height: 20px; }
+.recent button { width: 20px; height: 20px; border: 1px solid var(--line); border-radius: 3px; padding: 0; }
+
+/* ---------- Maps ---------- */
+.map-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: 230px minmax(0, 1fr) 290px; }
+.map-layout > aside { overflow: auto; padding: 12px; display: grid; gap: 16px; align-content: start; background: var(--panel); }
+.map-layout > aside.left { border-right: 1px solid var(--line); }
+.map-layout > aside.right { border-left: 1px solid var(--line); }
+.map-center { display: grid; grid-template-rows: auto 1fr auto; min-height: 0; }
+.map-tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+.map-tools .sep { width: 1px; align-self: stretch; background: var(--line); margin: 0 4px; }
+.canvas-wrap { position: relative; min-height: 320px; background: var(--void); overflow: hidden; }
+.canvas-wrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; user-select: none; -webkit-user-select: none; }
+.map-status { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 6px 12px; font: 11px var(--font-mono); color: var(--muted); border-top: 1px solid var(--line); }
+.maplist { display: grid; gap: 4px; }
+.maplist button { text-align: left; background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 7px 8px; display: grid; gap: 2px; }
+.maplist button[aria-current="true"] { background: var(--panel-2); border-color: var(--line); }
+.maplist .st { font-size: 11px; color: var(--muted); }
+.pill { display: inline-block; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; padding: 1px 6px; border-radius: 4px; border: 1px solid currentColor; }
+.pill.draft { color: var(--muted); } .pill.ready { color: var(--warn); } .pill.built { color: var(--ok); }
+.zones { display: grid; gap: 6px; }
+.zone {
+  display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; align-items: center;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; text-align: left;
+}
+.zone[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.zone .sw { width: 22px; height: 22px; border-radius: 4px; border: 1px solid rgba(255,255,255,.15); }
+.zone .k { font-size: 11px; color: var(--muted); }
+.zone-props { display: grid; gap: 8px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+.zone-props .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.texpick { display: grid; grid-template-columns: 40px 1fr; gap: 8px; align-items: center; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 4px; text-align: left; }
+.texpick img { width: 40px; height: 40px; object-fit: cover; image-rendering: pixelated; border-radius: 3px; background: var(--void); }
+.texpick span { font: 11px var(--font-mono); overflow: hidden; text-overflow: ellipsis; }
+.things { display: grid; gap: 10px; }
+.things .grp { display: grid; gap: 4px; }
+.things .items { display: grid; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); gap: 4px; }
+.thing-btn { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 3px; display: grid; justify-items: center; gap: 2px; min-width: 0; }
+.thing-btn[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.thing-btn .ti { height: 34px; display: grid; place-items: center; }
+.thing-btn img { max-height: 34px; max-width: 44px; image-rendering: pixelated; }
+.thing-btn span { font-size: 9.5px; line-height: 1.1; text-align: center; color: var(--muted); }
+.angles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+
+/* Texture picker dialog */
+.picker { position: fixed; inset: 0; z-index: 30; background: rgba(8,6,4,.75); display: grid; place-items: center; padding: 16px; }
+.picker-box { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; width: min(900px, 100%); max-height: 100%; display: grid; grid-template-rows: auto 1fr; overflow: hidden; }
+.picker-box header { display: flex; gap: 8px; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.picker-box .gallery { padding: 12px; overflow: auto; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); }
+
+/* Sync */
+.sync { overflow: auto; padding-block: 24px 48px; }
+.sync-inner { max-width: 760px; display: grid; gap: 24px; }
+.sync h2 { font-family: var(--font-display); font-weight: 400; font-size: 24px; margin: 0; text-wrap: balance; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.stat { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; display: grid; gap: 2px; }
+.stat b { font: 600 24px var(--font-mono); font-variant-numeric: tabular-nums; }
+.stat span { color: var(--muted); font-size: 12px; }
+.steps { margin: 0; padding-left: 22px; display: grid; gap: 8px; max-width: 65ch; }
+.steps code, .sync p code { font-family: var(--font-mono); font-size: 12.5px; background: var(--panel-2); padding: 1px 5px; border-radius: 4px; }
+.sync p { margin: 0; max-width: 65ch; color: var(--muted); }
+
+.toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 40; background: var(--fg); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-weight: 500; box-shadow: 0 6px 24px rgba(0,0,0,.4); }
+
+@media (max-width: 980px) {
+  .editor-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(260px, 1fr) auto; overflow: auto; }
+  .editor-body > * { overflow: visible; }
+  .tools, .colors { border: 0; }
+  .toolgrid { grid-template-columns: repeat(4, 1fr); }
+  .map-layout { grid-template-columns: minmax(0, 1fr); overflow: auto; }
+  .map-layout > aside { overflow: visible; border: 0 !important; }
+  .canvas-wrap { min-height: 60vh; }
+  .map-center { order: -1; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<header class="top gutter">
+  <div class="brand">Мастерская Doom-мода <small>Freedoom 0.13 · Unity</small></div>
+  <nav class="tabs" role="tablist">
+    <button role="tab" id="tab-textures" aria-selected="true" data-view="textures">Текстуры</button>
+    <button role="tab" id="tab-maps" aria-selected="false" data-view="maps">Карты</button>
+    <button role="tab" id="tab-sync" aria-selected="false" data-view="sync">Синхронизация</button>
+  </nav>
+  <div class="conn"><span class="dot busy" id="conn-dot"></span><span id="conn-text">Подключаюсь к хранилищу…</span></div>
+</header>
+<div class="banner gutter" id="db-banner" hidden>Хранилище недоступно в этом окне. Рисовать можно, но изменения не сохранятся и не дойдут до Unity.</div>
+
+<main>
+  <!-- TEXTURES -->
+  <section class="view" id="view-textures">
+    <div class="tex-toolbar gutter">
+      <div class="seg" id="cat-seg">
+        <button data-cat="walls" aria-pressed="true">Стены<span class="n" id="n-walls">963</span></button>
+        <button data-cat="flats" aria-pressed="false">Пол и потолок<span class="n" id="n-flats">240</span></button>
+        <button data-cat="sprites" aria-pressed="false">Спрайты<span class="n" id="n-sprites">1350</span></button>
+        <button data-cat="graphics" aria-pressed="false">Интерфейс<span class="n" id="n-graphics">89</span></button>
+        <button data-cat="changed" aria-pressed="false">Изменённые<span class="n" id="n-changed">0</span></button>
+      </div>
+      <input type="search" id="tex-search" placeholder="Поиск по имени, напр. STARTAN или TROO">
+    </div>
+    <div class="gallery-wrap gutter">
+      <div class="gallery" id="gallery"></div>
+      <div class="empty" id="gallery-empty" hidden></div>
+      <div class="more" id="gallery-more" hidden><button class="btn" id="more-btn">Показать ещё</button></div>
+    </div>
+  </section>
+
+  <!-- MAPS -->
+  <section class="view" id="view-maps" hidden>
+    <div class="map-layout">
+      <aside class="left">
+        <div class="row" style="justify-content:space-between"><span class="label">Карты</span><button class="btn" id="map-new">+ Новая</button></div>
+        <div class="maplist" id="maplist"></div>
+        <div id="map-props" class="zone-props" hidden>
+          <label class="field">Название<input type="text" id="map-name"></label>
+          <div class="two">
+            <label class="field">Ширина, клеток<input type="number" id="map-w" min="8" max="128"></label>
+            <label class="field">Высота, клеток<input type="number" id="map-h" min="8" max="128"></label>
+          </div>
+          <button class="btn" id="map-resize">Изменить размер</button>
+          <label class="field">Заметки для Claude<textarea id="map-notes" rows="4" placeholder="Например: тёмный склад, в центре арена с имп-ами, секрет за северной стеной"></textarea></label>
+          <button class="btn primary" id="map-ready">Готово: отправить Claude</button>
+          <button class="btn danger" id="map-delete">Удалить карту</button>
+        </div>
+      </aside>
+
+      <div class="map-center">
+        <div class="map-tools" id="map-tools">
+          <button class="btn" data-tool="brush" aria-pressed="true" title="Кисть (B)">Кисть</button>
+          <button class="btn" data-tool="rect" aria-pressed="false" title="Прямоугольник (R)">Прямоугольник</button>
+          <button class="btn" data-tool="fill" aria-pressed="false" title="Заливка (G)">Заливка</button>
+          <button class="btn" data-tool="erase" aria-pressed="false" title="Ластик (E)">Ластик</button>
+          <button class="btn" data-tool="thing" aria-pressed="false" title="Поставить объект (T)">Объект</button>
+          <button class="btn" data-tool="select" aria-pressed="false" title="Выбрать и двигать объекты (V)">Выбор</button>
+          <button class="btn" data-tool="pan" aria-pressed="false" title="Двигать вид (H, или зажать пробел)">Рука</button>
+          <span class="sep"></span>
+          <select id="brush-size" title="Размер кисти"><option value="1">1×1</option><option value="2">2×2</option><option value="3">3×3</option><option value="5">5×5</option></select>
+          <button class="btn" id="tex-view" aria-pressed="false" title="Показывать текстуры пола">Текстуры пола</button>
+          <span class="sep"></span>
+          <button class="btn" id="map-undo" title="Отменить (Ctrl+Z)">↶</button>
+          <button class="btn" id="map-redo" title="Повторить (Ctrl+Y)">↷</button>
+          <button class="btn" id="map-fit" title="Показать всю карту">Вся карта</button>
+        </div>
+        <div class="canvas-wrap" id="canvas-wrap"><canvas id="map-canvas"></canvas></div>
+        <div class="map-status"><span id="ms-cell">—</span><span id="ms-save">Нет карты</span><span>Колёсико: масштаб · пробел + тащить: двигать вид · пустота вокруг комнат = стены</span></div>
+      </div>
+
+      <aside class="right">
+        <div class="grp">
+          <div class="row" style="justify-content:space-between"><span class="label">Зоны (чем рисовать)</span><button class="btn" id="zone-add">+ Зона</button></div>
+        </div>
+        <div class="zones" id="zones"></div>
+        <div class="zone-props" id="zone-props"></div>
+        <div>
+          <span class="label">Объекты</span>
+          <div class="things" id="things" style="margin-top:8px"></div>
+        </div>
+        <div class="zone-props" id="thing-props" hidden></div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- SYNC -->
+  <section class="view" id="view-sync" hidden>
+    <div class="sync gutter">
+      <div class="sync-inner">
+        <h2>Как правки попадают в Unity</h2>
+        <div class="stats">
+          <div class="stat"><b id="st-edits">0</b><span>изменённых текстур</span></div>
+          <div class="stat"><b id="st-maps">0</b><span>карт</span></div>
+          <div class="stat"><b id="st-ready">0</b><span>карт ждут Claude</span></div>
+          <div class="stat"><b id="st-last" style="font-size:15px">ещё не было</b><span>последний перенос в Unity</span></div>
+        </div>
+        <p id="st-note"></p>
+        <ol class="steps">
+          <li>Перерисуйте текстуры во вкладке «Текстуры» и нажмите <code>Сохранить</code>. Правка сразу лежит в хранилище сайта.</li>
+          <li>Нарисуйте карту сверху во вкладке «Карты»: комнаты зонами, монстров и предметы объектами. Пустота вокруг комнат автоматически становится стенами.</li>
+          <li>Нажмите <code>Готово: отправить Claude</code> и напишите в чат «синхронизируй». Claude заберёт правки и карты, достроит уровни и запишет всё в папку Unity-проекта <code>Assets/DoomMod/Resources</code>.</li>
+          <li>В Unity откройте меню <code>Doom Mod → Собрать уровень</code>. Текстуры и карты подтянутся автоматически.</li>
+        </ol>
+        <div class="row">
+          <button class="btn primary" id="dl-zip">Скачать пакет для Unity (.zip)</button>
+          <span class="mono" style="color:var(--muted);font-size:12px">Запасной путь: распакуйте архив в Assets/DoomMod/Resources</span>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- Pixel editor -->
+<div class="editor" id="editor" hidden>
+  <div class="editor-head gutter">
+    <button class="btn" id="ed-close">← Назад</button>
+    <h2 id="ed-title">—</h2><span class="meta" id="ed-meta"></span>
+    <span class="spacer"></span>
+    <button class="btn" id="ed-orig" title="Удерживайте, чтобы увидеть оригинал">Оригинал</button>
+    <button class="btn danger" id="ed-reset">Сбросить к оригиналу</button>
+    <button class="btn primary" id="ed-save">Сохранить</button>
+  </div>
+  <div class="editor-body">
+    <div class="tools">
+      <div><div class="label">Инструмент</div>
+        <div class="toolgrid" id="ed-tools" style="margin-top:6px">
+          <button class="btn" data-t="pencil" aria-pressed="true">Карандаш<kbd>B</kbd></button>
+          <button class="btn" data-t="eraser" aria-pressed="false">Ластик<kbd>E</kbd></button>
+          <button class="btn" data-t="fill" aria-pressed="false">Заливка<kbd>G</kbd></button>
+          <button class="btn" data-t="picker" aria-pressed="false">Пипетка<kbd>I</kbd></button>
+          <button class="btn" data-t="line" aria-pressed="false">Линия<kbd>L</kbd></button>
+          <button class="btn" data-t="rect" aria-pressed="false">Рамка<kbd>R</kbd></button>
+        </div>
+      </div>
+      <label class="field">Размер кисти
+        <select id="ed-size"><option value="1">1 px</option><option value="2">2 px</option><option value="3">3 px</option><option value="4">4 px</option><option value="6">6 px</option></select>
+      </label>
+      <label class="field">Масштаб
+        <input type="range" id="ed-zoom" min="1" max="24" value="8">
+      </label>
+      <label class="row" style="font-size:13px"><input type="checkbox" id="ed-grid" checked> Сетка пикселей</label>
+      <label class="row" style="font-size:13px" title="XP-Pen, Wacom и другие планшеты: слабый нажим — 1 пиксель, сильный — выбранный размер"><input type="checkbox" id="ed-pressure" checked> Нажим пера = размер кисти</label>
+      <div class="row">
+        <button class="btn" id="ed-undo">↶ Отменить</button>
+        <button class="btn" id="ed-redo">↷</button>
+      </div>
+      <div class="row">
+        <button class="btn" id="ed-flip-h">⇋ Отразить</button>
+        <button class="btn" id="ed-flip-v">⇵ Отразить</button>
+      </div>
+      <label class="btn" style="text-align:center">Вставить картинку…<input type="file" id="ed-import" accept="image/*" hidden></label>
+    </div>
+    <div class="stage" id="ed-stage"><canvas id="ed-canvas"></canvas><span class="hint" id="ed-hint"></span></div>
+    <div class="colors">
+      <div class="cur">
+        <div class="swatch-big" id="ed-cur"></div>
+        <label class="field">Свой цвет<input type="color" id="ed-color" value="#e0702f"></label>
+      </div>
+      <div><div class="label">Недавние</div><div class="recent" id="ed-recent" style="margin-top:6px"></div></div>
+      <div><div class="label">Палитра Doom (PLAYPAL)</div><div class="pal" id="ed-pal" style="margin-top:6px"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Texture picker -->
+<div class="picker" id="picker" hidden>
+  <div class="picker-box">
+    <header>
+      <b id="pk-title">Выберите текстуру</b>
+      <input type="search" id="pk-search" placeholder="Поиск" style="flex:1;min-width:120px">
+      <button class="btn" id="pk-close">Закрыть</button>
+    </header>
+    <div class="gallery" id="pk-grid"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(() => {
+"use strict";
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const el = (tag, attrs = {}, ...kids) => {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") e.className = v;
+    else if (k === "text") e.textContent = v;
+    else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+    else if (v !== false && v != null) e.setAttribute(k, v === true ? "" : v);
+  }
+  for (const c of kids) if (c != null) e.append(c);
+  return e;
+};
+let toastTimer;
+function toast(msg) {
+  const t = $("#toast"); t.textContent = msg; t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.hidden = true), 2400);
+}
+function armConfirm(btn, label, action) {
+  // Two-step confirm inside the page (dialogs are not available in the viewer).
+  if (btn.classList.contains("armed")) { btn.classList.remove("armed"); btn.textContent = btn.dataset.label; action(); return; }
+  btn.dataset.label = btn.textContent; btn.textContent = label; btn.classList.add("armed");
+  setTimeout(() => { if (btn.classList.contains("armed")) { btn.classList.remove("armed"); btn.textContent = btn.dataset.label; } }, 3500);
+}
+
+/* ---------------- Data: original textures ---------------- */
+const CAT_LABEL = { walls: "Стена", flats: "Пол/потолок", sprites: "Спрайт", graphics: "Интерфейс (HUD)" };
+const bundles = {};
+function loadCat(cat) {
+  if (!bundles[cat]) bundles[cat] = fetch("tex/" + cat + ".json").then(r => { if (!r.ok) throw new Error(r.status); return r.json(); });
+  return bundles[cat];
+}
+let palette = [];
+const palReady = fetch("tex/palette.json").then(r => r.json()).then(p => (palette = p)).catch(() => []);
+const origURL = e => "data:image/png;base64," + e.png;
+
+/* ---------------- Data: shared store ---------------- */
+let db = null;
+const edits = new Map();   // key -> doc data
+const maps = new Map();    // id -> doc data
+let syncStatus = null;
+const editKey = (cat, name) => cat + "." + name.replace(/[^A-Za-z0-9_-]/g, c => "~" + c.charCodeAt(0).toString(16).padStart(2, "0"));
+const texURL = (cat, name, entry) => { const e = edits.get(editKey(cat, name)); return e ? e.png : origURL(entry); };
+
+function setConn(state, text) { $("#conn-dot").className = "dot " + state; $("#conn-text").textContent = text; }
+
+/* Where edits and maps are kept:
+   "unity"   tools/site_server.py on this computer writes straight into the Unity project
+             (the page is served by it, or opened from GitHub Pages while it runs);
+   "claude"  the claude.ai artifact store;
+   "browser" GitHub Pages without the server: kept in this browser, moved into Unity
+             automatically the next time the server is running. */
+const UNITY_SERVER = "http://localhost:8765";
+const servedLocally = ["localhost", "127.0.0.1"].includes(location.hostname);
+let mode = null;
+function makeLocalDb(base) {
+  const subs = new Set();
+  const api = (c, id) => base + "/api/" + c + (id ? "/" + encodeURIComponent(id) : "");
+  const fail = async r => { if (!r.ok) throw { code: "unavailable", message: await r.text() }; return r; };
+  const snap = list => {
+    const docs = list.map(d => ({ id: d.id, exists: true, data: () => d.data }));
+    return { docs, size: docs.length, empty: !docs.length };
+  };
+  async function poll(force) {
+    for (const s of subs) {
+      try {
+        const idx = await (await fail(await fetch(api(s.coll, "_index")))).text();
+        if (!force && idx === s.last) continue;
+        s.last = idx;
+        s.cb(snap(await (await fail(await fetch(api(s.coll)))).json()));
+        setConn("ok", "Сохраняю прямо в Unity-проект");
+      } catch { setConn("bad", "Локальный сервер не отвечает. Запустите «Запустить сайт.bat»"); }
+    }
+  }
+  setInterval(poll, 2000);
+  const docRef = (c, id) => ({
+    id,
+    async set(data) { await fail(await fetch(api(c, id), { method: "PUT", body: JSON.stringify(data) })); poll(); },
+    async delete() { await fail(await fetch(api(c, id), { method: "DELETE" })); poll(); },
+    onSnapshot(cb) { cb({ id, exists: false, data: () => undefined }); return () => {}; },
+  });
+  return {
+    collection(coll) {
+      return {
+        onSnapshot(cb) { const s = { coll, cb, last: null }; subs.add(s); poll(); return () => subs.delete(s); },
+        doc: id => docRef(coll, id),
+        async add(data) {
+          const r = await fail(await fetch(api(coll), { method: "POST", body: JSON.stringify(data) }));
+          const { id } = await r.json(); poll(); return docRef(coll, id);
+        },
+      };
+    },
+    doc(path) { const [c, id] = path.split("/"); return docRef(c, id); },
+  };
+}
+
+/* Same interface as the other stores, kept in localStorage. */
+function makeBrowserDb() {
+  const KEY = "doommod:";
+  const read = c => { try { return JSON.parse(localStorage.getItem(KEY + c) || "{}"); } catch { return {}; } };
+  const write = (c, obj) => {
+    try { localStorage.setItem(KEY + c, JSON.stringify(obj)); }
+    catch { throw { code: "quota_exceeded" }; }
+  };
+  const subs = new Set();
+  const notify = c => {
+    const all = read(c);
+    for (const s of subs) if (s.coll === c) {
+      const docs = Object.entries(all).map(([id, data]) => ({ id, exists: true, data: () => data }));
+      s.cb({ docs, size: docs.length, empty: !docs.length });
+    }
+  };
+  const docRef = (c, id) => ({
+    id,
+    async set(data) { const all = read(c); all[id] = data; write(c, all); notify(c); },
+    async delete() { const all = read(c); delete all[id]; write(c, all); notify(c); },
+    onSnapshot(cb) { cb({ id, exists: false, data: () => undefined }); return () => {}; },
+  });
+  return {
+    collection(coll) {
+      return {
+        onSnapshot(cb) { const s = { coll, cb }; subs.add(s); setTimeout(() => notify(coll)); return () => subs.delete(s); },
+        doc: id => docRef(coll, id),
+        async add(data) { const id = "map-" + Date.now().toString(36); await docRef(coll, id).set(data); return docRef(coll, id); },
+      };
+    },
+    doc(path) { const [c, id] = path.split("/"); return docRef(c, id); },
+    pending() { return { edits: read("edits"), maps: read("maps") }; },
+    clear() { try { localStorage.removeItem(KEY + "edits"); localStorage.removeItem(KEY + "maps"); } catch {} },
+  };
+}
+
+async function unityServerUp() {
+  try {
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 1500);
+    const r = await fetch(UNITY_SERVER + "/api/edits/_index", { signal: ctl.signal });
+    clearTimeout(t); return r.ok;
+  } catch { return false; }
+}
+
+/* Drawings made in the browser while the server was off go into the Unity project now. */
+async function flushBrowserToUnity() {
+  const local = makeBrowserDb(), { edits: e, maps: m } = local.pending();
+  const n = Object.keys(e).length + Object.keys(m).length;
+  if (!n) return;
+  const put = (c, id, data) => fetch(UNITY_SERVER + "/api/" + c + "/" + encodeURIComponent(id), { method: "PUT", body: JSON.stringify(data) }).then(r => { if (!r.ok) throw r; });
+  try {
+    for (const [id, d] of Object.entries(e)) await put("edits", id, d);
+    for (const [id, d] of Object.entries(m)) await put("maps", id, d);
+    local.clear();
+    toast("Перенёс в Unity правки из браузера: " + n);
+  } catch { toast("Не все правки из браузера удалось перенести в Unity"); }
+}
+
+(async () => {
+  if (servedLocally) { db = makeLocalDb(""); mode = "unity"; }
+  else if (window.claude) { try { db = await window.claude.use("db"); mode = db ? "claude" : null; } catch { db = null; } }
+  else if (await unityServerUp()) { await flushBrowserToUnity(); db = makeLocalDb(UNITY_SERVER); mode = "unity"; }
+  else {
+    db = makeBrowserDb(); mode = "browser";
+    setConn("busy", "Сохраняю в браузере. Запустите «Запустить сайт.bat», чтобы писать прямо в Unity");
+  }
+  if (!db) { setConn("bad", "Без хранилища"); $("#db-banner").hidden = false; return; }
+  if (mode === "claude") setConn("ok", "Хранилище подключено");
+  renderSync();
+  db.collection("edits").onSnapshot(snap => {
+    edits.clear();
+    for (const d of snap.docs) edits.set(d.id, d.data());
+    onEditsChanged();
+  }, err => { setConn("bad", "Ошибка хранилища: " + err.code); });
+  db.collection("maps").onSnapshot(snap => {
+    maps.clear();
+    for (const d of snap.docs) maps.set(d.id, d.data());
+    onMapsChanged();
+  }, err => { setConn("bad", "Ошибка хранилища: " + err.code); });
+  db.doc("sync/status").onSnapshot(s => { syncStatus = s.exists ? s.data() : null; renderSync(); });
+})();
+
+/* ---------------- Tabs ---------------- */
+const VIEWS = ["textures", "maps", "sync"];
+function showView(v) {
+  if (!VIEWS.includes(v)) v = "textures";
+  for (const b of $$("nav.tabs button")) b.setAttribute("aria-selected", String(b.dataset.view === v));
+  for (const n of VIEWS) $("#view-" + n).hidden = n !== v;
+  if (v === "maps") MapEd.activate();
+  if (v === "sync") renderSync();
+}
+for (const b of $$("nav.tabs button")) b.addEventListener("click", () => showView(b.dataset.view));
+
+/* ---------------- Gallery ---------------- */
+let galCat = "walls", galQuery = "", galLimit = 240;
+function card(cat, name, entry, onPick) {
+  const changed = edits.has(editKey(cat, name));
+  return el("button", { class: "card", title: name, onclick: () => onPick(cat, name) },
+    el("div", { class: "thumb" }, el("img", { src: texURL(cat, name, entry), alt: name, loading: "lazy" })),
+    el("div", { class: "nm", text: name }),
+    el("div", { class: "dim", text: entry.w + "×" + entry.h }),
+    changed ? el("span", { class: "chg", text: "изм." }) : null);
+}
+async function renderGallery() {
+  const g = $("#gallery"), empty = $("#gallery-empty"), more = $("#gallery-more");
+  let items = [];
+  const q = galQuery.trim().toUpperCase();
+  if (galCat === "changed") {
+    for (const e of edits.values()) {
+      const b = await loadCat(e.cat).catch(() => null);
+      if (b && b[e.name] && (!q || e.name.includes(q))) items.push([e.cat, e.name, b[e.name]]);
+    }
+  } else {
+    g.replaceChildren(el("div", { class: "empty", text: "Загружаю текстуры…" }));
+    const b = await loadCat(galCat).catch(() => null);
+    if (!b) { g.replaceChildren(); empty.hidden = false; empty.textContent = "Не удалось загрузить текстуры. Обновите страницу."; return; }
+    for (const [n, e] of Object.entries(b)) if (!q || n.includes(q)) items.push([galCat, n, e]);
+  }
+  empty.hidden = items.length > 0;
+  empty.textContent = galCat === "changed" ? "Вы ещё ничего не перерисовали. Откройте любую текстуру и нажмите «Сохранить»." : "Ничего не найдено.";
+  g.replaceChildren(...items.slice(0, galLimit).map(([c, n, e]) => card(c, n, e, openEditor)));
+  more.hidden = items.length <= galLimit;
+  $("#more-btn").textContent = "Показать ещё (" + (items.length - galLimit) + ")";
+}
+for (const b of $$("#cat-seg button")) b.addEventListener("click", () => {
+  galCat = b.dataset.cat; galLimit = 240;
+  for (const x of $$("#cat-seg button")) x.setAttribute("aria-pressed", String(x === b));
+  renderGallery();
+});
+let searchTimer;
+$("#tex-search").addEventListener("input", e => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { galQuery = e.target.value; galLimit = 240; renderGallery(); }, 180); });
+$("#more-btn").addEventListener("click", () => { galLimit += 480; renderGallery(); });
+function onEditsChanged() {
+  $("#n-changed").textContent = edits.size;
+  if (!$("#view-textures").hidden) renderGallery();
+  MapEd.texturesChanged();
+  renderSync();
+}
+
+/* ---------------- Pixel editor ---------------- */
+const Ed = {
+  cat: null, name: null, w: 0, h: 0, px: null, orig: null,
+  tool: "pencil", size: 1, zoom: 8, grid: true, color: [224, 112, 47, 255],
+  undo: [], redo: [], down: false, last: null, start: null, preview: null, dirty: false, showOrig: false,
+  pressure: true, strokeSize: 0, downTool: null, hover: null,
+};
+const edCanvas = $("#ed-canvas"), edCtx = edCanvas.getContext("2d");
+const off = document.createElement("canvas"), offCtx = off.getContext("2d");
+const checker = (() => { const c = document.createElement("canvas"); c.width = c.height = 2; const x = c.getContext("2d"); x.fillStyle = "#2a241d"; x.fillRect(0, 0, 2, 2); x.fillStyle = "#211c17"; x.fillRect(0, 0, 1, 1); x.fillRect(1, 1, 1, 1); return c; })();
+
+function imgToPixels(src, w, h) {
+  return new Promise((res, rej) => {
+    const im = new Image();
+    im.onload = () => { off.width = w; off.height = h; offCtx.clearRect(0, 0, w, h); offCtx.drawImage(im, 0, 0, w, h); res(offCtx.getImageData(0, 0, w, h).data.slice()); };
+    im.onerror = rej; im.src = src;
+  });
+}
+async function openEditor(cat, name) {
+  const b = await loadCat(cat); const entry = b[name]; if (!entry) return;
+  Object.assign(Ed, { cat, name, w: entry.w, h: entry.h, undo: [], redo: [], dirty: false, preview: null });
+  Ed.orig = await imgToPixels(origURL(entry), entry.w, entry.h);
+  Ed.px = await imgToPixels(texURL(cat, name, entry), entry.w, entry.h);
+  $("#ed-title").textContent = name;
+  $("#ed-meta").textContent = CAT_LABEL[cat] + " · " + entry.w + "×" + entry.h + (edits.has(editKey(cat, name)) ? " · изменена" : "");
+  $("#ed-reset").disabled = !edits.has(editKey(cat, name));
+  const maxSide = Math.max(entry.w, entry.h);
+  Ed.zoom = Math.max(1, Math.min(24, Math.floor(560 / maxSide)));
+  $("#ed-zoom").value = Ed.zoom;
+  $("#editor").hidden = false;
+  await palReady; buildPalette(); drawEd(); updateSaveBtn();
+}
+function closeEditor() {
+  if (Ed.dirty) { armConfirm($("#ed-close"), "Закрыть без сохранения?", () => { Ed.dirty = false; closeEditor(); }); return; }
+  $("#editor").hidden = true;
+}
+function drawEd() {
+  const { w, h, zoom } = Ed;
+  edCanvas.width = w * zoom; edCanvas.height = h * zoom;
+  edCtx.imageSmoothingEnabled = false;
+  edCtx.fillStyle = edCtx.createPattern(checker, "repeat");
+  edCtx.save(); edCtx.scale(Math.max(4, zoom), Math.max(4, zoom)); edCtx.fillRect(0, 0, w * zoom, h * zoom); edCtx.restore();
+  off.width = w; off.height = h;
+  const src = Ed.showOrig ? Ed.orig : (Ed.preview || Ed.px);
+  offCtx.putImageData(new ImageData(new Uint8ClampedArray(src), w, h), 0, 0);
+  edCtx.drawImage(off, 0, 0, w * zoom, h * zoom);
+  if (Ed.grid && zoom >= 6) {
+    edCtx.strokeStyle = "rgba(0,0,0,.28)"; edCtx.lineWidth = 1; edCtx.beginPath();
+    for (let x = 1; x < w; x++) { edCtx.moveTo(x * zoom + .5, 0); edCtx.lineTo(x * zoom + .5, h * zoom); }
+    for (let y = 1; y < h; y++) { edCtx.moveTo(0, y * zoom + .5); edCtx.lineTo(w * zoom, y * zoom + .5); }
+    edCtx.stroke();
+  }
+  if (Ed.hover && !Ed.down && !Ed.showOrig) {
+    const s = Ed.tool === "fill" || Ed.tool === "picker" ? 1 : Ed.size, o = Math.floor((s - 1) / 2);
+    const [hx, hy] = Ed.hover;
+    edCtx.lineWidth = 1;
+    edCtx.strokeStyle = "rgba(0,0,0,.8)"; edCtx.strokeRect((hx - o) * zoom - .5, (hy - o) * zoom - .5, s * zoom + 1, s * zoom + 1);
+    edCtx.strokeStyle = "rgba(255,255,255,.9)"; edCtx.strokeRect((hx - o) * zoom + .5, (hy - o) * zoom + .5, s * zoom - 1, s * zoom - 1);
+  }
+}
+const rgbHex = c => "#" + c.slice(0, 3).map(v => v.toString(16).padStart(2, "0")).join("");
+function setColor(c, remember = true) {
+  Ed.color = [c[0], c[1], c[2], 255];
+  $("#ed-cur").style.background = rgbHex(Ed.color);
+  $("#ed-color").value = rgbHex(Ed.color);
+  if (remember) {
+    const r = $("#ed-recent"), hex = rgbHex(Ed.color);
+    for (const b of $$("button", r)) if (b.dataset.hex === hex) b.remove();
+    r.prepend(el("button", { "data-hex": hex, title: hex, style: "background:" + hex, onclick: () => setColor(Ed.color = hexRgb(hex), false) }));
+    while (r.children.length > 16) r.lastChild.remove();
+  }
+}
+const hexRgb = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16), 255];
+function buildPalette() {
+  const p = $("#ed-pal"); if (p.children.length || !palette.length) return;
+  for (const c of palette) p.append(el("button", { title: rgbHex(c), style: "background:" + rgbHex(c), onclick: () => setColor(c) }));
+}
+function plot(buf, x, y, rgba) {
+  const s = Ed.strokeSize || Ed.size, o = Math.floor((s - 1) / 2);
+  for (let dy = 0; dy < s; dy++) for (let dx = 0; dx < s; dx++) {
+    const px = x - o + dx, py = y - o + dy;
+    if (px < 0 || py < 0 || px >= Ed.w || py >= Ed.h) continue;
+    const i = (py * Ed.w + px) * 4; buf[i] = rgba[0]; buf[i + 1] = rgba[1]; buf[i + 2] = rgba[2]; buf[i + 3] = rgba[3];
+  }
+}
+function line(buf, x0, y0, x1, y1, rgba) {
+  const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+  let err = dx + dy;
+  for (;;) {
+    plot(buf, x0, y0, rgba);
+    if (x0 === x1 && y0 === y1) break;
+    const e2 = 2 * err;
+    if (e2 >= dy) { err += dy; x0 += sx; }
+    if (e2 <= dx) { err += dx; y0 += sy; }
+  }
+}
+function flood(buf, x, y, rgba) {
+  const w = Ed.w, h = Ed.h, i0 = (y * w + x) * 4;
+  const t = [buf[i0], buf[i0 + 1], buf[i0 + 2], buf[i0 + 3]];
+  if (t.every((v, k) => v === rgba[k])) return;
+  const same = i => buf[i] === t[0] && buf[i + 1] === t[1] && buf[i + 2] === t[2] && buf[i + 3] === t[3];
+  const stack = [x, y];
+  while (stack.length) {
+    const py = stack.pop(), px = stack.pop();
+    if (px < 0 || py < 0 || px >= w || py >= h) continue;
+    const i = (py * w + px) * 4; if (!same(i)) continue;
+    buf[i] = rgba[0]; buf[i + 1] = rgba[1]; buf[i + 2] = rgba[2]; buf[i + 3] = rgba[3];
+    stack.push(px + 1, py, px - 1, py, px, py + 1, px, py - 1);
+  }
+}
+function pushUndo() { Ed.undo.push(Ed.px.slice()); if (Ed.undo.length > 60) Ed.undo.shift(); Ed.redo = []; }
+function markDirty() { Ed.dirty = true; updateSaveBtn(); }
+function updateSaveBtn() { $("#ed-save").textContent = Ed.dirty ? "Сохранить •" : "Сохранить"; }
+function evPixel(e) {
+  const r = edCanvas.getBoundingClientRect();
+  return [Math.floor((e.clientX - r.left) / r.width * Ed.w), Math.floor((e.clientY - r.top) / r.height * Ed.h)];
+}
+/* Pointer input works for mouse, touch and graphics tablets (XP-Pen, Wacom):
+   pressure sets the brush size, the pen's eraser end erases, the barrel button picks a colour,
+   and coalesced events keep fast pen strokes continuous. */
+const isPenEraser = e => e.pointerType === "pen" && (e.button === 5 || (e.buttons & 32) !== 0);
+function strokeSizeFor(e) {
+  if (e.pointerType !== "pen" || !Ed.pressure || !(e.pressure > 0)) return Ed.size;
+  return Math.max(1, Math.round(Ed.size * Math.min(1, e.pressure * 1.3)));
+}
+const paintColor = () => Ed.downTool === "eraser" ? [0, 0, 0, 0] : Ed.color;
+const inside = (x, y) => x >= 0 && y >= 0 && x < Ed.w && y < Ed.h;
+function pickAt(x, y) { const i = (y * Ed.w + x) * 4; if (Ed.px[i + 3]) setColor([Ed.px[i], Ed.px[i + 1], Ed.px[i + 2]]); }
+const coalesced = e => { const list = e.getCoalescedEvents ? e.getCoalescedEvents() : []; return list.length ? list : [e]; };
+edCanvas.addEventListener("pointerdown", e => {
+  const [x, y] = evPixel(e);
+  if (e.button === 2) { e.preventDefault(); if (inside(x, y)) pickAt(x, y); return; } // barrel button / right click
+  const erasing = isPenEraser(e);
+  if (e.button !== 0 && !erasing) return;
+  e.preventDefault();
+  try { edCanvas.setPointerCapture(e.pointerId); } catch {}
+  if (!inside(x, y)) return;
+  const tool = erasing ? "eraser" : Ed.tool;
+  if (tool === "picker") { pickAt(x, y); return; }
+  pushUndo();
+  if (tool === "fill") { flood(Ed.px, x, y, Ed.color); markDirty(); drawEd(); return; }
+  Ed.down = true; Ed.downTool = tool; Ed.last = [x, y]; Ed.start = [x, y];
+  if (tool === "pencil" || tool === "eraser") { Ed.strokeSize = strokeSizeFor(e); plot(Ed.px, x, y, paintColor()); markDirty(); drawEd(); }
+});
+edCanvas.addEventListener("pointermove", e => {
+  const [x, y] = evPixel(e);
+  $("#ed-hint").textContent = inside(x, y) ? "x " + x + "  y " + y + (e.pointerType === "pen" && e.pressure ? "  нажим " + Math.round(e.pressure * 100) + "%" : "") : "";
+  Ed.hover = inside(x, y) ? [x, y] : null;
+  if (!Ed.down) { drawEd(); return; }
+  if (Ed.downTool === "pencil" || Ed.downTool === "eraser") {
+    for (const ev of coalesced(e)) {
+      const [cx, cy] = evPixel(ev);
+      Ed.strokeSize = strokeSizeFor(ev);
+      line(Ed.px, Ed.last[0], Ed.last[1], cx, cy, paintColor());
+      Ed.last = [cx, cy];
+    }
+    drawEd();
+  } else if (Ed.downTool === "line" || Ed.downTool === "rect") {
+    const p = Ed.px.slice(); const [sx, sy] = Ed.start;
+    if (Ed.downTool === "line") line(p, sx, sy, x, y, Ed.color);
+    else { line(p, sx, sy, x, sy, Ed.color); line(p, x, sy, x, y, Ed.color); line(p, x, y, sx, y, Ed.color); line(p, sx, y, sx, sy, Ed.color); }
+    Ed.preview = p; drawEd();
+  }
+});
+function endStroke() {
+  if (!Ed.down) return; Ed.down = false; Ed.strokeSize = 0;
+  if (Ed.preview) { Ed.px = Ed.preview; Ed.preview = null; markDirty(); }
+  drawEd();
+}
+edCanvas.addEventListener("pointerup", endStroke);
+edCanvas.addEventListener("pointercancel", endStroke);
+edCanvas.addEventListener("pointerleave", () => { if (!Ed.down) { Ed.hover = null; drawEd(); } });
+edCanvas.addEventListener("contextmenu", e => e.preventDefault()); // Windows Ink press-and-hold
+function setEdTool(t) { Ed.tool = t; for (const b of $$("#ed-tools button")) b.setAttribute("aria-pressed", String(b.dataset.t === t)); }
+for (const b of $$("#ed-tools button")) b.addEventListener("click", () => setEdTool(b.dataset.t));
+$("#ed-size").addEventListener("change", e => (Ed.size = +e.target.value));
+$("#ed-zoom").addEventListener("input", e => { Ed.zoom = +e.target.value; drawEd(); });
+$("#ed-grid").addEventListener("change", e => { Ed.grid = e.target.checked; drawEd(); });
+$("#ed-pressure").addEventListener("change", e => (Ed.pressure = e.target.checked));
+$("#ed-color").addEventListener("change", e => setColor(hexRgb(e.target.value)));
+function edUndo() { if (!Ed.undo.length) return; Ed.redo.push(Ed.px); Ed.px = Ed.undo.pop(); markDirty(); drawEd(); }
+function edRedo() { if (!Ed.redo.length) return; Ed.undo.push(Ed.px); Ed.px = Ed.redo.pop(); markDirty(); drawEd(); }
+$("#ed-undo").addEventListener("click", edUndo);
+$("#ed-redo").addEventListener("click", edRedo);
+function flip(horizontal) {
+  pushUndo(); const { w, h } = Ed, src = Ed.px, dst = new Uint8ClampedArray(src.length);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const sx = horizontal ? w - 1 - x : x, sy = horizontal ? y : h - 1 - y;
+    dst.set(src.subarray((sy * w + sx) * 4, (sy * w + sx) * 4 + 4), (y * w + x) * 4);
+  }
+  Ed.px = dst; markDirty(); drawEd();
+}
+$("#ed-flip-h").addEventListener("click", () => flip(true));
+$("#ed-flip-v").addEventListener("click", () => flip(false));
+$("#ed-import").addEventListener("change", async e => {
+  const f = e.target.files[0]; if (!f) return;
+  const url = URL.createObjectURL(f);
+  try { pushUndo(); Ed.px = await imgToPixels(url, Ed.w, Ed.h); markDirty(); drawEd(); toast("Картинка вписана в " + Ed.w + "×" + Ed.h); }
+  catch { toast("Не получилось открыть этот файл как картинку"); }
+  finally { URL.revokeObjectURL(url); e.target.value = ""; }
+});
+const origBtn = $("#ed-orig");
+origBtn.addEventListener("pointerdown", () => { Ed.showOrig = true; drawEd(); });
+for (const ev of ["pointerup", "pointerleave"]) origBtn.addEventListener(ev, () => { if (Ed.showOrig) { Ed.showOrig = false; drawEd(); } });
+$("#ed-close").addEventListener("click", closeEditor);
+
+async function saveEdit() {
+  if (!db) { toast("Хранилище недоступно: правка не сохранена"); return; }
+  off.width = Ed.w; off.height = Ed.h;
+  offCtx.putImageData(new ImageData(new Uint8ClampedArray(Ed.px), Ed.w, Ed.h), 0, 0);
+  const png = off.toDataURL("image/png");
+  const btn = $("#ed-save"); btn.disabled = true; btn.textContent = "Сохраняю…";
+  try {
+    await db.collection("edits").doc(editKey(Ed.cat, Ed.name)).set({ cat: Ed.cat, name: Ed.name, w: Ed.w, h: Ed.h, png, updatedAt: new Date().toISOString() });
+    Ed.dirty = false; $("#ed-reset").disabled = false; toast("Сохранено: " + Ed.name);
+  } catch (err) {
+    toast(err && err.code === "quota_exceeded" ? "Хранилище заполнено: сбросьте ненужные правки" : "Не сохранилось (" + (err && err.code || "ошибка") + "). Попробуйте ещё раз.");
+  } finally { btn.disabled = false; updateSaveBtn(); }
+}
+$("#ed-save").addEventListener("click", saveEdit);
+$("#ed-reset").addEventListener("click", e => armConfirm(e.currentTarget, "Точно сбросить?", async () => {
+  if (!db) return;
+  try {
+    await db.collection("edits").doc(editKey(Ed.cat, Ed.name)).delete();
+    Ed.px = Ed.orig.slice(); Ed.undo = []; Ed.redo = []; Ed.dirty = false; drawEd(); updateSaveBtn();
+    $("#ed-reset").disabled = true; toast("Вернул оригинал");
+  } catch (err) { toast("Не получилось сбросить (" + (err.code || "ошибка") + ")"); }
+}));
+
+/* ---------------- Map editor ---------------- */
+const ZONE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+const KINDS = { room: "Пол (комната)", wall: "Стена / колонна", door: "Дверь", liquid: "Кислота (урон)", exit: "Выход с уровня" };
+const DEFAULT_ZONES = [
+  { c: "A", name: "Комната", kind: "room", color: "#6b5f4c", floor: "FLOOR4_8", ceil: "CEIL3_5", wall: "STARTAN3", floorH: 0, ceilH: 128, light: 192 },
+  { c: "B", name: "Коридор", kind: "room", color: "#4f5a63", floor: "FLOOR5_1", ceil: "CEIL5_1", wall: "BROWN1", floorH: 0, ceilH: 96, light: 160 },
+  { c: "C", name: "Ступень", kind: "room", color: "#8a7656", floor: "STEP1", ceil: "CEIL3_5", wall: "STARTAN3", floorH: 24, ceilH: 128, light: 192 },
+  { c: "D", name: "Кислота", kind: "liquid", color: "#4f8a2e", floor: "NUKAGE1", ceil: "CEIL3_5", wall: "STARTAN3", floorH: -16, ceilH: 128, light: 208 },
+  { c: "E", name: "Дверь", kind: "door", color: "#a8642f", floor: "FLAT14", ceil: "FLAT14", wall: "BIGDOOR2", floorH: 0, ceilH: 96, light: 160 },
+  { c: "F", name: "Колонна", kind: "wall", color: "#2f2a25", floor: "FLOOR4_8", ceil: "CEIL3_5", wall: "SUPPORT2", floorH: 0, ceilH: 128, light: 192 },
+  { c: "G", name: "Выход", kind: "exit", color: "#b0362c", floor: "FLAT14", ceil: "TLITE6_4", wall: "SW1EXIT", floorH: 0, ceilH: 96, light: 224 },
+];
+const THINGS = [
+  { g: "Игрок", items: [["player1", "Старт", "PLAYA1"]] },
+  { g: "Монстры", items: [["POSS", "Зомби"], ["SPOS", "Сержант"], ["TROO", "Имп"], ["SARG", "Демон"], ["SKUL", "Душа"], ["HEAD", "Како"], ["BOSS", "Барон"]] },
+  { g: "Оружие", items: [["SHOT", "Дробовик"], ["MGUN", "Пулемёт"], ["LAUN", "Ракетница"], ["PLAS", "Плазма"], ["CSAW", "Пила"]] },
+  { g: "Патроны", items: [["CLIP", "Обойма"], ["AMMO", "Ящик"], ["SHEL", "Патроны"], ["SBOX", "Коробка"], ["ROCK", "Ракета"], ["CELL", "Батарея"]] },
+  { g: "Здоровье и броня", items: [["STIM", "Аптечка"], ["MEDI", "Большая"], ["BON1", "+1 HP"], ["BON2", "+1 броня"], ["ARM1", "Броня"], ["ARM2", "Мега"], ["SOUL", "Сфера"]] },
+  { g: "Ключи", items: [["BKEY", "Синий"], ["YKEY", "Жёлтый"], ["RKEY", "Красный"]] },
+  { g: "Декор", items: [["BAR1", "Бочка"], ["COLU", "Лампа"], ["TLMP", "Торшер"], ["ELEC", "Столб"], ["CAND", "Свеча"], ["COL1", "Колонна"], ["SMIT", "Пень"]] },
+];
+const THING_NAME = {}; for (const g of THINGS) for (const [t, n] of g.items) THING_NAME[t] = n;
+const ANGLES = [["↑", 90], ["↗", 45], ["→", 0], ["↘", 315], ["↓", 270], ["↙", 225], ["←", 180], ["↖", 135]];
+
+const MapEd = (() => {
+  const canvas = $("#map-canvas"), ctx = canvas.getContext("2d"), wrap = $("#canvas-wrap");
+  let mapId = null, map = null, active = false;
+  let tool = "brush", zoneC = "A", thingT = "player1", brush = 1, showTex = false;
+  let view = { x: 20, y: 20, s: 16 }, spaceDown = false;
+  let drag = null, hover = null, selected = -1;
+  let undo = [], redo = [];
+  let saveTimer = null, saving = null, pendingSave = false, dirty = false;
+  const spriteCache = new Map(), flatCache = new Map();
+  let sprites = null, flats = null, walls = null;
+
+  const zoneOf = c => map.zones.find(z => z.c === c);
+  const cellAt = (x, y) => (x < 0 || y < 0 || x >= map.w || y >= map.h) ? "." : map.rows[y][x];
+  function setCell(x, y, c) {
+    if (x < 0 || y < 0 || x >= map.w || y >= map.h) return;
+    const r = map.rows[y]; if (r[x] === c) return;
+    map.rows[y] = r.slice(0, x) + c + r.slice(x + 1);
+  }
+  function blankMap(name) {
+    const w = 48, h = 48;
+    return { name, w, h, rows: Array.from({ length: h }, () => ".".repeat(w)), zones: structuredClone(DEFAULT_ZONES), things: [], notes: "", status: "draft" };
+  }
+  function snapshot() { return JSON.stringify({ rows: map.rows, things: map.things, zones: map.zones, w: map.w, h: map.h }); }
+  function pushUndo() { undo.push(snapshot()); if (undo.length > 80) undo.shift(); redo = []; }
+  function restore(s) { Object.assign(map, JSON.parse(s)); selected = -1; renderZones(); renderThingProps(); draw(); queueSave(); }
+
+  /* --- persistence: one write at a time per map doc --- */
+  function queueSave() {
+    dirty = true; setSaveText();
+    clearTimeout(saveTimer); saveTimer = setTimeout(flush, 1200);
+  }
+  async function flush() {
+    if (!db || !mapId || !map) return;
+    if (saving) { pendingSave = true; return; }
+    const body = { ...map, updatedAt: new Date().toISOString() };
+    if (body.status === "built") body.status = "draft"; // edited after Claude built it
+    map.status = body.status;
+    dirty = false; saving = db.collection("maps").doc(mapId).set(body);
+    setSaveText();
+    try { await saving; }
+    catch (err) { dirty = true; toast(err.code === "quota_exceeded" ? "Хранилище заполнено" : "Карта не сохранилась (" + (err.code || "ошибка") + ")"); }
+    finally { saving = null; setSaveText(); if (pendingSave) { pendingSave = false; flush(); } }
+  }
+  function setSaveText() {
+    $("#ms-save").textContent = !map ? "Нет карты" : !db ? "Без хранилища: не сохраняется" : saving ? "Сохраняю…" : dirty ? "Есть несохранённое" : "Сохранено";
+  }
+
+  /* --- textures for thumbnails --- */
+  function spriteFor(t) {
+    if (spriteCache.has(t)) return spriteCache.get(t);
+    if (!sprites) return null;
+    const pre = t === "player1" ? "PLAY" : t;
+    const key = [pre + "A1", pre + "A0"].find(k => sprites[k]) || Object.keys(sprites).find(k => k.startsWith(pre + "A"));
+    if (!key) { spriteCache.set(t, null); return null; }
+    const im = new Image(); im.src = texURL("sprites", key, sprites[key]); im.onload = () => draw();
+    spriteCache.set(t, im); return im;
+  }
+  function flatImg(name) {
+    if (flatCache.has(name)) return flatCache.get(name);
+    if (!flats || !flats[name]) return null;
+    const im = new Image(); im.src = texURL("flats", name, flats[name]); im.onload = () => draw();
+    flatCache.set(name, im); return im;
+  }
+  function thumbURL(cat, name) {
+    const b = cat === "flats" ? flats : walls;
+    return b && b[name] ? texURL(cat, name, b[name]) : "";
+  }
+
+  /* --- drawing --- */
+  function resize() {
+    const r = wrap.getBoundingClientRect(), dpr = devicePixelRatio || 1;
+    canvas.width = Math.max(1, r.width * dpr); canvas.height = Math.max(1, r.height * dpr);
+    draw();
+  }
+  function draw() {
+    const dpr = devicePixelRatio || 1, W = canvas.width / dpr, H = canvas.height / dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = "#0d0b09"; ctx.fillRect(0, 0, W, H);
+    if (!map) {
+      ctx.fillStyle = "#a8998a"; ctx.font = "14px Golos Text, sans-serif"; ctx.textAlign = "center";
+      ctx.fillText("Создайте карту кнопкой «+ Новая» слева", W / 2, H / 2); ctx.textAlign = "start"; return;
+    }
+    const s = view.s;
+    ctx.save(); ctx.translate(view.x, view.y);
+    ctx.fillStyle = "#14110e"; ctx.fillRect(0, 0, map.w * s, map.h * s);
+    ctx.imageSmoothingEnabled = false;
+    const x0 = Math.max(0, Math.floor(-view.x / s)), y0 = Math.max(0, Math.floor(-view.y / s));
+    const x1 = Math.min(map.w, Math.ceil((W - view.x) / s)), y1 = Math.min(map.h, Math.ceil((H - view.y) / s));
+    const zmap = {}; for (const z of map.zones) zmap[z.c] = z;
+    for (let y = y0; y < y1; y++) {
+      const row = map.rows[y];
+      for (let x = x0; x < x1; x++) {
+        const c = row[x]; if (c === ".") continue;
+        const z = zmap[c]; if (!z) continue;
+        let im = null;
+        if (showTex && z.kind !== "wall") im = flatImg(z.floor);
+        if (im && im.complete && im.naturalWidth) ctx.drawImage(im, (x % 4) * 16, (y % 4) * 16, 16, 16, x * s, y * s, s, s);
+        else { ctx.fillStyle = z.color; ctx.fillRect(x * s, y * s, s, s); }
+        if (z.kind === "wall") { ctx.strokeStyle = "rgba(255,255,255,.12)"; ctx.beginPath(); ctx.moveTo(x * s, y * s + s); ctx.lineTo(x * s + s, y * s); ctx.stroke(); }
+        if (z.kind === "door") { ctx.fillStyle = "rgba(0,0,0,.35)"; ctx.fillRect(x * s + s * .4, y * s, s * .2, s); }
+      }
+    }
+    if (s >= 8) {
+      ctx.strokeStyle = "rgba(255,255,255,.05)"; ctx.lineWidth = 1; ctx.beginPath();
+      for (let x = x0; x <= x1; x++) { ctx.moveTo(x * s + .5, y0 * s); ctx.lineTo(x * s + .5, y1 * s); }
+      for (let y = y0; y <= y1; y++) { ctx.moveTo(x0 * s, y * s + .5); ctx.lineTo(x1 * s, y * s + .5); }
+      ctx.stroke();
+    }
+    // automatic walls: where open space meets void or a solid zone
+    const solid = c => c === "." || (zmap[c] && zmap[c].kind === "wall");
+    ctx.strokeStyle = "#ece2d2"; ctx.lineWidth = Math.max(1.5, s / 8); ctx.beginPath();
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+      if (solid(cellAt(x, y))) continue;
+      if (solid(cellAt(x, y - 1))) { ctx.moveTo(x * s, y * s); ctx.lineTo(x * s + s, y * s); }
+      if (solid(cellAt(x, y + 1))) { ctx.moveTo(x * s, y * s + s); ctx.lineTo(x * s + s, y * s + s); }
+      if (solid(cellAt(x - 1, y))) { ctx.moveTo(x * s, y * s); ctx.lineTo(x * s, y * s + s); }
+      if (solid(cellAt(x + 1, y))) { ctx.moveTo(x * s + s, y * s); ctx.lineTo(x * s + s, y * s + s); }
+    }
+    ctx.stroke();
+    // things
+    map.things.forEach((t, i) => {
+      const cx = t.x * s, cy = t.y * s, r = Math.max(6, s * .7);
+      const im = spriteFor(t.t);
+      if (im && im.complete && im.naturalWidth) {
+        const k = (r * 1.6) / Math.max(im.naturalWidth, im.naturalHeight);
+        ctx.drawImage(im, cx - im.naturalWidth * k / 2, cy - im.naturalHeight * k / 2, im.naturalWidth * k, im.naturalHeight * k);
+      } else { ctx.fillStyle = "#e0702f"; ctx.beginPath(); ctx.arc(cx, cy, r / 2, 0, 7); ctx.fill(); }
+      if (t.t === "player1" || THINGS[1].items.some(it => it[0] === t.t)) {
+        const a = (t.a || 0) * Math.PI / 180;
+        ctx.strokeStyle = t.t === "player1" ? "#79b864" : "#db5040"; ctx.lineWidth = 2; ctx.beginPath();
+        ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(a) * r, cy - Math.sin(a) * r); ctx.stroke();
+      }
+      if (i === selected) { ctx.strokeStyle = "#e0702f"; ctx.lineWidth = 2; ctx.strokeRect(cx - r, cy - r, r * 2, r * 2); }
+    });
+    // previews
+    if (drag && drag.kind === "rect" && drag.cur) {
+      const [ax, ay] = drag.start, [bx, by] = drag.cur;
+      ctx.strokeStyle = "#e0702f"; ctx.lineWidth = 2; ctx.setLineDash([5, 4]);
+      ctx.strokeRect(Math.min(ax, bx) * s, Math.min(ay, by) * s, (Math.abs(bx - ax) + 1) * s, (Math.abs(by - ay) + 1) * s);
+      ctx.setLineDash([]);
+    } else if (hover && (tool === "brush" || tool === "erase")) {
+      const o = Math.floor((brush - 1) / 2);
+      ctx.strokeStyle = "rgba(224,112,47,.9)"; ctx.lineWidth = 1.5;
+      ctx.strokeRect((hover[0] - o) * s, (hover[1] - o) * s, brush * s, brush * s);
+    }
+    ctx.restore();
+  }
+
+  /* --- input --- */
+  function evCell(e) {
+    const r = canvas.getBoundingClientRect();
+    const fx = (e.clientX - r.left - view.x) / view.s, fy = (e.clientY - r.top - view.y) / view.s;
+    return { fx, fy, x: Math.floor(fx), y: Math.floor(fy) };
+  }
+  function stamp(x, y, c) { const o = Math.floor((brush - 1) / 2); for (let dy = 0; dy < brush; dy++) for (let dx = 0; dx < brush; dx++) setCell(x - o + dx, y - o + dy, c); }
+  function strokeLine(a, b, c) {
+    let [x0, y0] = a; const [x1, y1] = b;
+    const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1; let err = dx + dy;
+    for (;;) { stamp(x0, y0, c); if (x0 === x1 && y0 === y1) break; const e2 = 2 * err; if (e2 >= dy) { err += dy; x0 += sx; } if (e2 <= dx) { err += dx; y0 += sy; } }
+  }
+  function floodCells(x, y, c) {
+    const t = cellAt(x, y); if (t === c || x < 0 || y < 0 || x >= map.w || y >= map.h) return;
+    const st = [[x, y]];
+    while (st.length) { const [px, py] = st.pop(); if (cellAt(px, py) !== t || px < 0 || py < 0 || px >= map.w || py >= map.h) continue; setCell(px, py, c); st.push([px + 1, py], [px - 1, py], [px, py + 1], [px, py - 1]); }
+  }
+  function thingAt(fx, fy) {
+    const r = Math.max(.5, 6 / view.s);
+    for (let i = map.things.length - 1; i >= 0; i--) { const t = map.things[i]; if (Math.abs(t.x - fx) < r + .2 && Math.abs(t.y - fy) < r + .2) return i; }
+    return -1;
+  }
+  canvas.addEventListener("pointerdown", e => {
+    if (!map) return;
+    try { canvas.setPointerCapture(e.pointerId); } catch {}
+    const p = evCell(e);
+    const penErase = isPenEraser(e);
+    // middle button, right button or the pen's barrel button drag the view
+    const panning = tool === "pan" || spaceDown || e.button === 1 || e.button === 2;
+    if (panning) { drag = { kind: "pan", sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y }; return; }
+    if (e.button !== 0 && !penErase) return;
+    if (penErase || tool === "brush" || tool === "erase") {
+      pushUndo(); const c = penErase || tool === "erase" ? "." : zoneC; stamp(p.x, p.y, c);
+      drag = { kind: "paint", last: [p.x, p.y], c }; draw();
+    } else if (tool === "rect") {
+      pushUndo(); drag = { kind: "rect", start: [p.x, p.y], cur: [p.x, p.y] }; draw();
+    } else if (tool === "fill") {
+      pushUndo(); floodCells(p.x, p.y, zoneC); draw(); queueSave();
+    } else if (tool === "thing") {
+      if (p.x < 0 || p.y < 0 || p.x >= map.w || p.y >= map.h) return;
+      pushUndo();
+      if (thingT === "player1") map.things = map.things.filter(t => t.t !== "player1");
+      map.things.push({ t: thingT, x: p.x + .5, y: p.y + .5, a: 90 });
+      selected = map.things.length - 1; renderThingProps(); draw(); queueSave();
+    } else if (tool === "select") {
+      selected = thingAt(p.fx, p.fy); renderThingProps(); draw();
+      if (selected >= 0) { pushUndo(); drag = { kind: "move", moved: false }; }
+    }
+  });
+  canvas.addEventListener("pointermove", e => {
+    if (!map) return;
+    const p = evCell(e);
+    hover = [p.x, p.y];
+    const z = cellAt(p.x, p.y), zz = z !== "." && zoneOf(z);
+    $("#ms-cell").textContent = (p.x >= 0 && p.y >= 0 && p.x < map.w && p.y < map.h) ? "x " + p.x + "  y " + p.y + "  · " + (zz ? zz.name : "пустота") : "—";
+    if (!drag) { draw(); return; }
+    if (drag.kind === "pan") { view.x = drag.vx + e.clientX - drag.sx; view.y = drag.vy + e.clientY - drag.sy; draw(); }
+    else if (drag.kind === "paint") {
+      for (const ev of coalesced(e)) { const q = evCell(ev); strokeLine(drag.last, [q.x, q.y], drag.c); drag.last = [q.x, q.y]; }
+      draw();
+    }
+    else if (drag.kind === "rect") { drag.cur = [p.x, p.y]; draw(); }
+    else if (drag.kind === "move" && selected >= 0) {
+      const t = map.things[selected]; t.x = Math.round(p.fx * 2) / 2; t.y = Math.round(p.fy * 2) / 2;
+      t.x = Math.min(map.w, Math.max(0, t.x)); t.y = Math.min(map.h, Math.max(0, t.y)); drag.moved = true; draw();
+    }
+  });
+  canvas.addEventListener("pointercancel", () => { if (drag && drag.kind === "paint") queueSave(); drag = null; });
+  canvas.addEventListener("pointerup", () => {
+    if (!drag) return;
+    const d = drag; drag = null;
+    if (d.kind === "paint") queueSave();
+    if (d.kind === "rect") {
+      const [ax, ay] = d.start, [bx, by] = d.cur;
+      for (let y = Math.min(ay, by); y <= Math.max(ay, by); y++) for (let x = Math.min(ax, bx); x <= Math.max(ax, bx); x++) setCell(x, y, zoneC);
+      draw(); queueSave();
+    }
+    if (d.kind === "move") { if (d.moved) queueSave(); else undo.pop(); }
+  });
+  canvas.addEventListener("pointerleave", () => { hover = null; draw(); });
+  canvas.addEventListener("wheel", e => {
+    if (!map) return; e.preventDefault();
+    const r = canvas.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+    const ns = Math.min(64, Math.max(3, view.s * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
+    view.x = mx - (mx - view.x) * ns / view.s; view.y = my - (my - view.y) * ns / view.s; view.s = ns; draw();
+  }, { passive: false });
+  canvas.addEventListener("contextmenu", e => e.preventDefault());
+
+  function setTool(t) {
+    tool = t; for (const b of $$("#map-tools [data-tool]")) b.setAttribute("aria-pressed", String(b.dataset.tool === t));
+    canvas.style.cursor = t === "pan" ? "grab" : t === "select" ? "default" : "crosshair";
+  }
+  for (const b of $$("#map-tools [data-tool]")) b.addEventListener("click", () => setTool(b.dataset.tool));
+  $("#brush-size").addEventListener("change", e => (brush = +e.target.value));
+  $("#tex-view").addEventListener("click", e => { showTex = !showTex; e.currentTarget.setAttribute("aria-pressed", String(showTex)); if (showTex) loadCat("flats").then(b => { flats = b; draw(); }); draw(); });
+  function doUndo() { if (!map || !undo.length) return; redo.push(snapshot()); restore(undo.pop()); }
+  function doRedo() { if (!map || !redo.length) return; undo.push(snapshot()); restore(redo.pop()); }
+  $("#map-undo").addEventListener("click", doUndo);
+  $("#map-redo").addEventListener("click", doRedo);
+  function fit() {
+    if (!map) return; const r = wrap.getBoundingClientRect();
+    view.s = Math.max(3, Math.min(48, Math.floor(Math.min((r.width - 24) / map.w, (r.height - 24) / map.h))));
+    view.x = (r.width - map.w * view.s) / 2; view.y = (r.height - map.h * view.s) / 2; draw();
+  }
+  $("#map-fit").addEventListener("click", fit);
+
+  /* --- zones panel --- */
+  function renderZones() {
+    const box = $("#zones");
+    if (!map) { box.replaceChildren(el("div", { class: "empty", text: "Нет открытой карты" })); $("#zone-props").hidden = true; return; }
+    box.replaceChildren(...map.zones.map(z => el("button", { class: "zone", "aria-pressed": String(z.c === zoneC), onclick: () => { zoneC = z.c; if (tool !== "brush" && tool !== "rect" && tool !== "fill") setTool("brush"); renderZones(); } },
+      el("span", { class: "sw", style: "background:" + z.color }), el("span", {}, z.name, el("div", { class: "k", text: KINDS[z.kind] })),
+      el("span", { class: "k mono", text: z.floorH + "/" + z.ceilH }))));
+    renderZoneProps();
+  }
+  function texPick(cat, label, value, onPick) {
+    return el("label", { class: "field" }, label,
+      el("button", { class: "texpick", type: "button", onclick: () => openPicker(cat, onPick) },
+        el("img", { src: thumbURL(cat, value), alt: "" }), el("span", { text: value })));
+  }
+  function renderZoneProps() {
+    const z = map && zoneOf(zoneC), box = $("#zone-props");
+    box.hidden = !z; if (!z) return;
+    const upd = (k, v, num) => { pushUndo(); z[k] = num ? (Number(v) || 0) : v; renderZones(); draw(); queueSave(); };
+    const kindSel = el("select", { id: "zp-kind", onchange: e => upd("kind", e.target.value) });
+    for (const [k, n] of Object.entries(KINDS)) kindSel.append(el("option", { value: k, selected: k === z.kind, text: n }));
+    box.replaceChildren(
+      el("div", { class: "two" },
+        el("label", { class: "field" }, "Название", el("input", { type: "text", id: "zp-name", value: z.name, onchange: e => upd("name", e.target.value) })),
+        el("label", { class: "field" }, "Цвет на схеме", el("input", { type: "color", id: "zp-color", value: z.color, onchange: e => upd("color", e.target.value) }))),
+      el("label", { class: "field" }, "Тип", kindSel),
+      texPick("walls", "Текстура стен", z.wall, n => upd("wall", n)),
+      el("div", { class: "two" }, texPick("flats", "Пол", z.floor, n => upd("floor", n)), texPick("flats", "Потолок", z.ceil, n => upd("ceil", n))),
+      el("div", { class: "two" },
+        el("label", { class: "field" }, "Высота пола", el("input", { type: "number", id: "zp-fh", step: 8, value: z.floorH, onchange: e => upd("floorH", e.target.value, true) })),
+        el("label", { class: "field" }, "Высота потолка", el("input", { type: "number", id: "zp-ch", step: 8, value: z.ceilH, onchange: e => upd("ceilH", e.target.value, true) }))),
+      el("label", { class: "field" }, "Освещённость (0–255)", el("input", { type: "number", id: "zp-light", min: 0, max: 255, step: 16, value: z.light, onchange: e => upd("light", e.target.value, true) })),
+      el("button", { class: "btn danger", type: "button", onclick: e => armConfirm(e.currentTarget, "Удалить зону и её клетки?", () => {
+        if (map.zones.length <= 1) return toast("Нужна хотя бы одна зона");
+        pushUndo(); const c = z.c; map.zones = map.zones.filter(q => q !== z);
+        map.rows = map.rows.map(r => r.split(c).join(".")); zoneC = map.zones[0].c; renderZones(); draw(); queueSave();
+      }) }, "Удалить зону"));
+  }
+  $("#zone-add").addEventListener("click", () => {
+    if (!map) return;
+    const c = [...ZONE_CHARS].find(ch => !map.zones.some(z => z.c === ch)); if (!c) return toast("Больше зон не помещается");
+    pushUndo();
+    const base = zoneOf(zoneC) || DEFAULT_ZONES[0];
+    const hue = Math.floor(Math.random() * 360);
+    map.zones.push({ ...base, c, name: "Зона " + c, color: hslHex(hue, 35, 45) });
+    zoneC = c; renderZones(); queueSave();
+  });
+  function hslHex(h, s, l) { s /= 100; l /= 100; const f = n => { const k = (n + h / 30) % 12, a = s * Math.min(l, 1 - l); return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)))).toString(16).padStart(2, "0"); }; return "#" + f(0) + f(8) + f(4); }
+
+  /* --- things panel --- */
+  function renderThings() {
+    const box = $("#things");
+    box.replaceChildren(...THINGS.map(g => el("div", { class: "grp" }, el("div", { class: "k", style: "font-size:11px;color:var(--muted)", text: g.g }),
+      el("div", { class: "items" }, ...g.items.map(([t, n]) => {
+        const im = spriteFor(t);
+        return el("button", { class: "thing-btn", title: n, "aria-pressed": String(tool === "thing" && thingT === t), onclick: () => { thingT = t; setTool("thing"); renderThings(); } },
+          el("div", { class: "ti" }, im ? el("img", { src: im.src, alt: "" }) : null), el("span", { text: n }));
+      })))));
+  }
+  function renderThingProps() {
+    const box = $("#thing-props"), t = map && map.things[selected];
+    box.hidden = !t; if (!t) return;
+    box.replaceChildren(
+      el("div", { class: "row", style: "justify-content:space-between" }, el("b", { text: THING_NAME[t.t] || t.t }), el("span", { class: "mono k", text: "x " + t.x + " y " + t.y })),
+      el("div", { class: "label", text: "Куда смотрит" }),
+      el("div", { class: "angles" }, ...ANGLES.map(([lbl, a]) => el("button", { class: "btn", "aria-pressed": String((t.a || 0) === a), onclick: () => { pushUndo(); t.a = a; renderThingProps(); draw(); queueSave(); } }, lbl))),
+      el("button", { class: "btn danger", onclick: () => { pushUndo(); map.things.splice(selected, 1); selected = -1; renderThingProps(); draw(); queueSave(); } }, "Удалить объект"));
+  }
+
+  /* --- maps list --- */
+  const STATUS = { draft: ["draft", "Черновик"], ready: ["ready", "Ждёт Claude"], built: ["built", "В Unity"] };
+  function renderList() {
+    const list = $("#maplist");
+    const entries = [...maps.entries()].sort((a, b) => (b[1].updatedAt || "").localeCompare(a[1].updatedAt || ""));
+    if (!entries.length) { list.replaceChildren(el("div", { class: "empty", style: "padding:12px 0", text: db ? "Карт пока нет. Нажмите «+ Новая»." : "Хранилище недоступно." })); }
+    else list.replaceChildren(...entries.map(([id, m]) => {
+      const [cls, lbl] = STATUS[m.status] || STATUS.draft;
+      return el("button", { "aria-current": String(id === mapId), onclick: () => open(id) },
+        el("span", { text: m.name || "Без названия" }),
+        el("span", { class: "st" }, el("span", { class: "pill " + cls, text: lbl }), " " + m.w + "×" + m.h + " · " + (m.things || []).length + " объектов"));
+    }));
+    const p = $("#map-props"); p.hidden = !map;
+    if (map) {
+      if (document.activeElement !== $("#map-name")) $("#map-name").value = map.name;
+      if (document.activeElement !== $("#map-notes")) $("#map-notes").value = map.notes || "";
+      $("#map-w").value = map.w; $("#map-h").value = map.h;
+      const ready = map.status === "ready";
+      $("#map-ready").textContent = ready ? "Отправлено, ждёт Claude" : "Готово: отправить Claude";
+      $("#map-ready").disabled = ready;
+    }
+  }
+  function open(id) {
+    const m = maps.get(id); if (!m) return;
+    if (dirty) flush();
+    mapId = id; map = structuredClone(m); delete map.updatedAt;
+    undo = []; redo = []; selected = -1; dirty = false;
+    if (!map.zones.some(z => z.c === zoneC)) zoneC = map.zones[0].c;
+    renderList(); renderZones(); renderThingProps(); setSaveText(); fit();
+  }
+  $("#map-new").addEventListener("click", async () => {
+    if (!db) return toast("Хранилище недоступно");
+    const n = maps.size + 1;
+    const m = blankMap("Уровень " + n);
+    try { const ref = await db.collection("maps").add({ ...m, updatedAt: new Date().toISOString() }); maps.set(ref.id, { ...m, updatedAt: new Date().toISOString() }); open(ref.id); toast("Карта создана: рисуйте комнаты зоной «Комната»"); }
+    catch (err) { toast("Не удалось создать карту (" + (err.code || "ошибка") + ")"); }
+  });
+  $("#map-name").addEventListener("change", e => { if (!map) return; map.name = e.target.value.trim() || "Без названия"; queueSave(); });
+  $("#map-notes").addEventListener("change", e => { if (!map) return; map.notes = e.target.value; queueSave(); });
+  $("#map-resize").addEventListener("click", () => {
+    if (!map) return;
+    const w = Math.min(128, Math.max(8, +$("#map-w").value || map.w)), h = Math.min(128, Math.max(8, +$("#map-h").value || map.h));
+    pushUndo();
+    map.rows = Array.from({ length: h }, (_, y) => ((map.rows[y] || "") + ".".repeat(w)).slice(0, w));
+    map.w = w; map.h = h; map.things = map.things.filter(t => t.x <= w && t.y <= h);
+    fit(); renderList(); queueSave();
+  });
+  $("#map-ready").addEventListener("click", () => {
+    if (!map) return;
+    if (!map.things.some(t => t.t === "player1")) return toast("Поставьте объект «Старт», чтобы было откуда начинать");
+    map.status = "ready"; queueSave(); flush(); renderList();
+    toast("Отправлено. Напишите Claude в чате: «синхронизируй»");
+  });
+  $("#map-delete").addEventListener("click", e => armConfirm(e.currentTarget, "Удалить навсегда?", async () => {
+    if (!db || !mapId) return;
+    const id = mapId; clearTimeout(saveTimer); dirty = false; mapId = null; map = null;
+    try { await db.collection("maps").doc(id).delete(); toast("Карта удалена"); } catch (err) { toast("Не удалось удалить (" + (err.code || "ошибка") + ")"); }
+    renderList(); renderZones(); renderThingProps(); setSaveText(); draw();
+  }));
+
+  /* --- keyboard --- */
+  window.addEventListener("keydown", e => {
+    if ($("#view-maps").hidden || !$("#picker").hidden || /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
+    if (e.code === "Space") { spaceDown = true; canvas.style.cursor = "grab"; e.preventDefault(); return; }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") { e.preventDefault(); e.shiftKey ? doRedo() : doUndo(); return; }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") { e.preventDefault(); doRedo(); return; }
+    if ((e.key === "Delete" || e.key === "Backspace") && map && selected >= 0) { pushUndo(); map.things.splice(selected, 1); selected = -1; renderThingProps(); draw(); queueSave(); return; }
+    const k = { b: "brush", r: "rect", g: "fill", e: "erase", t: "thing", v: "select", h: "pan" }[e.key.toLowerCase()];
+    if (k && !e.ctrlKey && !e.metaKey) setTool(k);
+  });
+  window.addEventListener("keyup", e => { if (e.code === "Space") { spaceDown = false; setTool(tool); } });
+
+  new ResizeObserver(() => { if (active) resize(); }).observe(wrap);
+
+  return {
+    async activate() {
+      const first = !active; active = true; resize();
+      if (first) {
+        renderList(); renderZones(); renderThings();
+        [sprites, walls, flats] = await Promise.all([loadCat("sprites"), loadCat("walls"), loadCat("flats")]).catch(() => [null, null, null]);
+        renderThings(); renderZones(); draw();
+        if (!map && maps.size) open([...maps.entries()].sort((a, b) => (b[1].updatedAt || "").localeCompare(a[1].updatedAt || ""))[0][0]);
+      }
+    },
+    mapsChanged() {
+      if (mapId && maps.has(mapId) && !dirty && !saving) {
+        const m = maps.get(mapId);
+        if (m.status !== map.status || m.updatedAt) { const keep = { view }; map = structuredClone(m); delete map.updatedAt; view = keep.view; renderZones(); draw(); }
+      }
+      if (mapId && !maps.has(mapId)) { mapId = null; map = null; renderZones(); renderThingProps(); draw(); setSaveText(); }
+      renderList();
+      if (active && !map && maps.size) open([...maps.keys()][0]);
+    },
+    texturesChanged() { spriteCache.clear(); flatCache.clear(); if (active) { renderThings(); renderZones(); draw(); } },
+  };
+})();
+
+/* ---------------- Texture picker ---------------- */
+let pickCat = "walls", pickCb = null;
+async function openPicker(cat, cb) {
+  pickCat = cat; pickCb = cb; $("#pk-title").textContent = cat === "flats" ? "Текстура пола или потолка" : "Текстура стены";
+  $("#pk-search").value = ""; $("#picker").hidden = false; await renderPicker(); $("#pk-search").focus();
+}
+async function renderPicker() {
+  const b = await loadCat(pickCat), q = $("#pk-search").value.trim().toUpperCase();
+  const items = Object.entries(b).filter(([n]) => !q || n.includes(q)).slice(0, 300);
+  $("#pk-grid").replaceChildren(...items.map(([n, e]) => card(pickCat, n, e, (c, name) => { $("#picker").hidden = true; pickCb && pickCb(name); })));
+}
+$("#pk-search").addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(renderPicker, 150); });
+$("#pk-close").addEventListener("click", () => ($("#picker").hidden = true));
+$("#picker").addEventListener("click", e => { if (e.target.id === "picker") $("#picker").hidden = true; });
+
+/* ---------------- Editor keyboard ---------------- */
+window.addEventListener("keydown", e => {
+  if ($("#editor").hidden) { if (e.key === "Escape") $("#picker").hidden = true; return; }
+  if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) && document.activeElement.type !== "range" && document.activeElement.type !== "checkbox") return;
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") { e.preventDefault(); e.shiftKey ? edRedo() : edUndo(); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") { e.preventDefault(); edRedo(); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); saveEdit(); return; }
+  if (e.key === "Escape") { closeEditor(); return; }
+  const t = { b: "pencil", e: "eraser", g: "fill", i: "picker", l: "line", r: "rect" }[e.key.toLowerCase()];
+  if (t && !e.ctrlKey && !e.metaKey) setEdTool(t);
+});
+
+/* ---------------- Sync tab ---------------- */
+function onMapsChanged() { MapEd.mapsChanged(); renderSync(); }
+function renderSync() {
+  $("#st-edits").textContent = edits.size;
+  $("#st-maps").textContent = maps.size;
+  $("#st-ready").textContent = [...maps.values()].filter(m => m.status === "ready").length;
+  if (mode === "browser") {
+    $("#st-last").textContent = "при запуске сервера";
+    $("#st-note").textContent = "Сейчас правки хранятся в этом браузере. Запустите «Запустить сайт.bat» в папке проекта и обновите страницу: всё нарисованное само перенесётся в Unity. Или скачайте архив и распакуйте его в Assets/DoomMod/Resources.";
+    $("#dl-zip").hidden = false;
+  } else if (mode === "unity") {
+    $("#st-last").textContent = "сразу";
+    $("#st-note").textContent = "Сайт запущен у вас на компьютере: каждая сохранённая текстура и карта сразу записывается в Assets/DoomMod/Resources. Переключитесь в Unity, и он подхватит изменения сам. Пересоберите уровень через меню Doom Mod.";
+    $("#dl-zip").hidden = true;
+  } else if (syncStatus && syncStatus.at) {
+    const d = new Date(syncStatus.at);
+    $("#st-last").textContent = isNaN(d) ? syncStatus.at : d.toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+    $("#st-note").textContent = syncStatus.note || "";
+  }
+}
+let downloads = null;
+(async () => { try { downloads = window.claude ? await window.claude.use("downloads") : null; } catch { downloads = null; } })();
+$("#dl-zip").addEventListener("click", async () => {
+  if (!window.JSZip) return toast("Архиватор не загрузился, обновите страницу");
+  // Same layout as Assets/DoomMod/Resources, so it unpacks straight into the project
+  const zip = new JSZip();
+  for (const e of edits.values()) {
+    const name = e.name.replace(/\\/g, "^").replace(/\[/g, "(").replace(/\]/g, ")");
+    zip.file("DoomSync/" + e.cat + "/" + name + ".png", e.png.split(",")[1], { base64: true });
+  }
+  for (const [id, m] of maps) zip.file("DoomMaps/" + id + ".json", JSON.stringify(m, null, 1));
+  const blob = await zip.generateAsync({ type: "blob" });
+  if (downloads) {
+    try { await downloads.save({ filename: "doom-mod-sync.zip", data: blob }); toast("Архив сохранён"); }
+    catch (err) { if (err.code !== "declined") toast("Не удалось сохранить (" + err.code + ")"); }
+    return;
+  }
+  const a = el("a", { href: URL.createObjectURL(blob), download: "doom-mod-sync.zip" });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+});
+
+/* ---------------- Boot ---------------- */
+setColor([224, 112, 47], false);
+palReady.then(buildPalette);
+showView(location.hash.slice(1));
+renderGallery();
+})();
+</script>
+</body></html>
